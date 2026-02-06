@@ -9,6 +9,39 @@ from alpaca.trading.enums import OrderSide as AlpacaOrderSideEnum, TimeInForce, 
 from alpaca.trading.models import Order as AlpacaOrderModel
 
 from systrade.data import BarData, ExecutionReport, Order
+# ---------------------------
+# --------- LOGGING ---------
+# ----- logging imports -----
+import logging.config
+import logging.handlers
+import json
+import pathlib
+# instantiate logger
+logger = logging.getLogger(__name__)
+
+# --- LOGGER CONFIG ---
+# Verbose dictionary-type config
+#+for custom logger.
+# Config file found in:
+# /.config/logger/config.json
+# (source: youtube.com/mCoding)
+def setup_logging():
+    config_file = pathlib.Path(".config/logger/config.json")
+    with open(config_file) as f_in:
+        config = json.load(f_in)
+    logging.config.dictConfig(config)
+# initialize escape codes for
+#+color-coding logs
+red = "\033[31m"
+green = "\033[32m"
+yellow = "\033[33m"
+blue = "\033[34m"
+hl_red = "\033[41m"
+hl_green = "\033[42m"
+hl_yellow = "\033[43m"
+hl_blue = "\033[44m"
+reset = "\033[0m"
+# ---------------------
 
 
 class Broker(ABC):
@@ -112,7 +145,7 @@ class AlpacaBroker(Broker):
 
     @override
     def post_order(self, order: Order) -> None:
-        """Post an order to the Alpaca API."""
+        """Post an order with intelligent Buying Power and Shorting checks."""
         
         if order.quantity > 0:
             alpaca_side = AlpacaOrderSideEnum.BUY
@@ -121,8 +154,7 @@ class AlpacaBroker(Broker):
             alpaca_side = AlpacaOrderSideEnum.SELL
             qty_magnitude = abs(order.quantity)
         else:
-            print(f"Order quantity is zero, skipping: {order}")
-            return
+            logger.info(f"Order quantity is zero, skipping: {order}")
 
         market_order_request = MarketOrderRequest(
             symbol=order.symbol,
@@ -133,10 +165,10 @@ class AlpacaBroker(Broker):
         )
 
         try:
-            submitted_order = self.trading_client.submit_order(market_order_request)
+            self.trading_client.submit_order(market_order_request)
             self._pending_orders[order.id] = order
         except Exception as e:
-            print(f"Error submitting order for {order.symbol}: {e}")
+            logger.error(f"{red}Error submitting order for {order.symbol}: {e}{reset}")
 
     @override
     def pop_latest(self) -> list[ExecutionReport]:

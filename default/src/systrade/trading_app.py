@@ -36,6 +36,17 @@ def setup_logging():
     with open(config_file) as f_in:
         config = json.load(f_in)
     logging.config.dictConfig(config)
+# initialize escape codes for
+#+color-coding logs
+red = "\033[31m"
+green = "\033[32m"
+yellow = "\033[33m"
+blue = "\033[34m"
+hl_red = "\033[41m"
+hl_green = "\033[42m"
+hl_yellow = "\033[43m"
+hl_blue = "\033[44m"
+reset = "\033[0m"
 # ---------------------
 
 
@@ -110,6 +121,8 @@ class MyMomentumStrategy(Strategy):
         self.symbol = symbol
         self.history = []
         self.trading_records = []
+        self.order_pending: bool = False
+        self.state = "FLAT"
         logger.info(f"Momentum Strategy initialized for {self.symbol}")
 
     @override
@@ -126,26 +139,36 @@ class MyMomentumStrategy(Strategy):
             bar = data[self.symbol]
             price = bar.close
 
+            if self.order_pending:
+                logger.debug("Order pending, skipping bar")
+                self.history.append(price)
+                return
+
             logger.info(f"Processing bar for {self.symbol} at {data.as_of}: Close={price}")
 
             if len(self.history) >= 2:
                 buy_signal = price > self.history[-1] > self.history[-2]
                 sell_signal = price < self.history[-1] < self.history[-2]
+                if buy_signal:
+                    logger.info(f"{hl_yellow} Buy Signal  {reset}")
+                if sell_signal:
+                    logger.info(f"{hl_yellow} Sell Signal  {reset}")
 
                 if buy_signal and not self.portfolio.is_invested_in(self.symbol):
-                    # TODO =============================
                     # set quantity to most you can afford
-                    qty = math.floor(self.portfolio.cash() / price)
-                    logger.info(f"Buy signal! Posting market order for {qty} shares of {self.symbol}")
-                    self.post_market_order(self.symbol, quantity=qty)
+                    # (added 5% buffer to avoid buying power issues)
+                    qty = math.floor((self.portfolio.cash() / price) * 0.95)
+                    logger.info(f"{hl_green}Buy signal! Posting market order for {qty} shares of {self.symbol}{reset}")
+                    self.post_market_order(self.symbol, quantity=qty, side="BUY")
                     self.order_pending = True
                     self._record_trade("BUY", qty, price)
-
-                elif sell_signal and self.portfolio.is_invested_in(self.symbol):
+                 
+                elif sell_signal and self.portfolio.is_invested_in(self.symbol) and not self.order_pending:
                     pos = self.portfolio.position(self.symbol)
+                    logger.info(f"{blue} Currently holding {pos.qty} shares of {self.symbol} {reset}")
                     if pos.qty > 0:
-                        logger.info(f"Sell signal! Closing position of {pos.qty} shares of {self.symbol}")
-                        self.post_market_order(self.symbol, quantity=-pos.qty)
+                        logger.info(f"{hl_red}Sell signal! Closing position of {pos.qty} shares of {self.symbol}{reset}")
+                        self.post_market_order(self.symbol, quantity=pos.qty, side="SELL")
                         self.order_pending = True
                         self._record_trade("SELL", pos.qty, price)
 
@@ -158,6 +181,7 @@ class MyMomentumStrategy(Strategy):
         log_report['fill_timestamp_iso'] = report.fill_timestamp.isoformat()
         logger.info(f"Notified of execution: {log_report}")
         self.trading_records.append(log_report)
+        self.order_pending = False
 
     def _record_trade(self, side, qty, price):
         """Helper to save a simple record locally."""
@@ -182,7 +206,7 @@ def main():
     broker = AlpacaBroker()
     strategy = MyMomentumStrategy(symbol="SPY")
 
-    starting_cash = 100000.0
+    starting_cash = 1000000
     engine = Engine(feed=feed, broker=broker, strategy=strategy, cash=starting_cash)
 
     logger.info("Engine initialized. Starting run...")
@@ -194,7 +218,7 @@ def main():
     except KeyboardInterrupt:
         logger.info("Trading interrupted by user. Stopping engine.")
     except Exception as e:
-        logger.error(f"An unexpected error occurred: {e}")
+        logger.error(f"{hl_red}An unexpected error occurred: {e}{reset}")
 
     logger.info("Application stopped.")
 
