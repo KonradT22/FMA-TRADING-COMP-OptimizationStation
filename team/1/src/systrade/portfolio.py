@@ -44,6 +44,10 @@ class PortfolioView(ABC):
         """Current cash balance"""
 
     @abstractmethod
+    def buying_power(self) -> float:
+        """Current buying power"""
+
+    @abstractmethod
     def asset_value(self) -> float:
         """Current market value of all assets"""
 
@@ -95,6 +99,11 @@ class Portfolio(PortfolioView):
     @override
     def cash(self) -> float:
         return self._cash
+    
+    @override
+    def buying_power() -> float:
+        acct = self._broker.get_account_details()
+        return float(acct['buying_power'])
     
     @override
     def asset_value(self) -> float:
@@ -191,6 +200,7 @@ class LivePortfolioView(PortfolioView):
         acct = self._broker.get_account_details()
         return float(acct['cash'])
 
+    @override
     def buying_power() -> float:
         acct = self._broker.get_account_details()
         return float(acct['buying_power'])

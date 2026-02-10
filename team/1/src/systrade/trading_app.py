@@ -11,7 +11,6 @@ from systrade.feed import AlpacaLiveStockFeed
 from systrade.broker import AlpacaBroker
 from systrade.strategy import Strategy
 from systrade.data import BarData, ExecutionReport
-from systrade.portfolio import PortfolioView, Position
 from systrade.engine import Engine
 
 import math
@@ -86,7 +85,7 @@ class MyMomentumStrategy(Strategy):
                 if buy_signal and not self.portfolio.is_invested_in(self.symbol):
                     # TODO =============================
                     # set quantity to most you can afford
-                    qty = math.floor(self.portfolio.cash() / (price * 0.95))
+                    qty = math.floor(self.portfolio.buying_power() / (price * 0.95))
                     logger.info(f"{hl_green}Buy signal! Posting market order for {qty} shares of {self.symbol}{reset}")
                     self.post_market_order(self.symbol, quantity=qty)
                     self.order_pending = True
