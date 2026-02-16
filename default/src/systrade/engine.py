@@ -1,4 +1,4 @@
-from systrade.broker import Broker
+from systrade.broker import Broker, AlpacaBroker
 from systrade.feed import Feed
 from systrade.portfolio import Portfolio, PortfolioView, LivePortfolioView
 from systrade.strategy import Strategy
@@ -13,7 +13,7 @@ class Engine:
         self._broker = broker
         self._strategy = strategy
         self._stop_flag = False
-        self._portfolio = Portfolio(cash)
+        self._portfolio = LivePortfolioView(broker=self._broker)
 
     def run(self) -> None:
         """Run the strategy"""

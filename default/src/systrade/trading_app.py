@@ -28,10 +28,10 @@ logger = logging.getLogger(__name__)
 # Verbose dictionary-type config
 #+for custom logger.
 # Config file found in:
-# /.config/logger/config.json
+# /config/logger/config.json
 # (source: youtube.com/mCoding)
 def setup_logging():
-    config_file = pathlib.Path(".config/logger/config.json")
+    config_file = pathlib.Path("config/logger/config.json")
     with open(config_file) as f_in:
         config = json.load(f_in)
     logging.config.dictConfig(config)
@@ -49,11 +49,9 @@ reset = "\033[0m"
 # ---------------------
 
 # -------  Momentum strategy -----------
-class MyMomentumStrategy(Strategy):
+class MomentumStrategy(Strategy):
     """
     Momentum strategy with long/short support.
-    Positive quantity = buy / close short
-    Negative quantity = sell / open short
     """
     def __init__(self, symbol: str) -> None:
         super().__init__()
@@ -67,6 +65,11 @@ class MyMomentumStrategy(Strategy):
         """Subscribe to the symbol on strategy start"""
         self.subscribe(self.symbol)
 
+    # main logic that handles buying and selling for this
+    #+moment strategy. there's almost surely a better way to
+    #+both code and format this. LOLL
+    # i am partial to thinking the bad logic offers nice
+    #+logging though....
     @override
     def on_data(self, data: BarData) -> None:
         """Processes incoming 1-minute bars live."""
@@ -82,23 +85,55 @@ class MyMomentumStrategy(Strategy):
                 buy_signal = price > self.history[-1] > self.history[-2]
                 sell_signal = price < self.history[-1] < self.history[-2]
 
-                if buy_signal and not self.portfolio.is_invested_in(self.symbol):
-                    # TODO =============================
-                    # set quantity to most you can afford
-                    qty = math.floor(self.portfolio.cash() / (price * 0.95))
-                    logger.info(f"{hl_green}Buy signal! Posting market order for {qty} shares of {self.symbol}{reset}")
-                    self.post_market_order(self.symbol, quantity=qty)
-                    self.order_pending = True
-                    self._record_trade("BUY", qty, price)
+                holding = self.portfolio.is_invested_in(self.symbol)
 
-                elif sell_signal and self.portfolio.is_invested_in(self.symbol):
-                    pos = self.portfolio.position(self.symbol)
-                    if pos.qty > 0:
-                        logger.info(f"{hl_red}Sell signal! Closing position of {pos.qty} shares of {self.symbol}{reset}")
-                        self.post_market_order(self.symbol, quantity=-pos.qty)
+                # this block will open a long position
+                if buy_signal and not holding:
+                    logger.debug(f"{blue}Buying Power={self.portfolio.buying_power()}, Invested={self.portfolio.is_invested_in(self.symbol)}{reset}")
+                    # add 5% buying power buffer
+                    #add temp 30% buffer for daytrading or something
+                    qty = math.floor((self.portfolio.buying_power() * 0.70) / price)
+                    if qty > 0:
+                        self.post_market_order(self.symbol, quantity=qty)
+                        logger.info(f"{hl_green}Buy signal! Posting market order for {qty} shares of {self.symbol}{reset}")
                         self.order_pending = True
-                        self._record_trade("SELL", pos.qty, price)
+                        self._record_trade("BUY", qty, price)
+                    else:
+                        logger.warning(f"{yellow}Quantity calculated as 0. Buying Power: {self.portfolio.buying_power()}{reset}")
 
+                # this block will open a short position
+                elif sell_signal and not holding:
+                    logger.debug(f"{blue}Buying Power={self.portfolio.buying_power()}, Invested={self.portfolio.is_invested_in(self.symbol)}{reset}")
+                    # add 5% buying power buffer
+                    #add temp 30% buffer for daytrading or something
+                    qty = math.floor((self.portfolio.buying_power() * 0.70) / price)
+                    if qty > 0:
+                        self.post_market_order(self.symbol, quantity=-qty)
+                        logger.info(f"{hl_red}Sell signal! Posting market order for {qty} shares of {self.symbol}{reset}")
+                        self.order_pending = True
+                        self._record_trade("SELL", qty, price)
+                    else:
+                        logger.warning(f"{yellow}Quantity calculated as 0. Buying Power: {self.portfolio.buying_power()}{reset}")
+
+                # this block will close a short position
+                elif buy_signal and holding:
+                    logger.debug(f"{blue}Buying Power={self.portfolio.buying_power()}, Invested={self.portfolio.is_invested_in(self.symbol)}{reset}")
+                    pos = self.portfolio.position(self.symbol)
+                    logger.info(f"{hl_yellow}Buy signal! Closing short position of {pos.qty} shares of {self.symbol}{reset}")
+                    self.post_market_order(self.symbol, quantity=pos.qty)
+                    self.order_pending = True
+                    self._record_trade("BUY", pos.qty, price)
+
+                # this block will close a long position
+                elif sell_signal and holding:
+                    logger.debug(f"{blue}Buying Power={self.portfolio.buying_power()}, Invested={self.portfolio.is_invested_in(self.symbol)}{reset}")
+                    pos = self.portfolio.position(self.symbol)
+                    logger.info(f"{hl_blue}Sell signal! Closing long position of {pos.qty} shares of {self.symbol}{reset}")
+                    self.post_market_order(self.symbol, quantity=-pos.qty)
+                    self.order_pending = True
+                    self._record_trade("SELL", pos.qty, price)
+            
+            # add price to tracking log
             self.history.append(price)
 
     @override
@@ -109,6 +144,10 @@ class MyMomentumStrategy(Strategy):
         logger.info(f"Notified of execution: {log_report}")
         self.trading_records.append(log_report)
 
+    # this function records trades into a json file
+    # the trades can be extracted out of a dockerized
+    #+instance of this trading app with the following
+    #+command: $ docker cp <container_name_or_id>:trading_results.json trading_results.json
     def _record_trade(self, side, qty, price):
         """Helper to save a simple record locally."""
         record = {
@@ -130,8 +169,10 @@ def main():
 
     feed = AlpacaLiveStockFeed()
     broker = AlpacaBroker()
-    strategy = MyMomentumStrategy(symbol="SPY")
+    strategy = MomentumStrategy(symbol="SPY")
 
+    # NOTE: theres almost surely a better way to store this cash info
+    # we could probably just get it from the API... :(
     starting_cash = 1000000
     engine = Engine(feed=feed, broker=broker, strategy=strategy, cash=starting_cash)
 

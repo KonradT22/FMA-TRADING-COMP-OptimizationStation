@@ -19,6 +19,6 @@
             "handlers": [
                 "stdout"
             ]
-        }         
+        } 
     }
 }
