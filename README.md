@@ -10,9 +10,10 @@
 ## Getting Started
 1. [Join the forum](https://mcfam.forum/index.php?register/)
 2. [Join a team](https://mcfam.forum/index.php?threads/2026-trading-competition-sign-up-thread.33/)
-3. Download your teams codebase. Each team will have their own repository that they will use for code submissions.
-The repository will just be your numbered teams (team1, team2...). You will need to add your Alpaca API keys to
-the env.list file found in the project root.
+3. Clone the repo.
+4. Add your Alpaca API keys to the env.list file found in the project root.
+5. Edit the code in such a way that you will maximize returns while managing risk.
+6. Run the app.
 
 ### Unix (Linux/MacOS)
 ```shell
