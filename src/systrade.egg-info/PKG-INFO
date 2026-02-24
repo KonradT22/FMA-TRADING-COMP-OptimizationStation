@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: systrade
-Version: 0.0.2
+Version: 1.0.2
 Requires-Python: >=3.13
 Requires-Dist: numpy<3,>=2
 Requires-Dist: pandas<3,>=2

@@ -48,7 +48,88 @@ hl_blue = "\033[44m"
 reset = "\033[0m"
 # ---------------------
 
-# -------  Momentum strategy -----------
+# ===============================================
+#        ---- Buy and Hold Strategy ----
+# ===============================================
+# It's in the name. _It will not sell_.
+# Could also be called the diamond hands strategy
+class LongStrategy(Strategy):
+    """
+    Buy and hold. "Go long" strategy
+    """
+    def __init__(self, symbol: str) -> None:
+        super().__init__()
+        self.symbol = symbol
+        self.history: list[float] = []
+        self.trading_records: list[dict] = []
+        logger.info(f"Long Strategy initialized for {self.symbol}")
+
+    @override
+    def on_start(self) -> None:
+        """Subscribe to the symbol on strategy start"""
+        self.subscribe(self.symbol)
+
+    # this will just buy when it gets its first price
+    @override
+    def on_data(self, data: BarData) -> None:
+        """Processes incoming 1-minute bars live."""
+        self.current_time = data.as_of
+
+        if self.symbol in data.symbols():
+            bar = data[self.symbol]
+            price = bar.close
+
+            logger.info(f"Processing bar for {self.symbol} at {data.as_of}: Close={price}")
+
+            # 30% buffer for daytrading
+            #-------------------------
+            # If you are marked by alpaca as a pattern daytrader,
+            #+they will nerf your buying power so this is added
+            #+to skirt that.
+            qty = math.floor((self.portfolio.buying_power() * 0.70) / price)
+            if qty > 0:
+                self.post_market_order(self.symbol, quantity=qty)
+                logger.info(f"{hl_green}Buy signal! Posting market order for {qty} shares of {self.symbol}{reset}")
+                self.order_pending = True
+                self._record_trade("BUY", qty, price)
+            else:
+                logger.warning(f"{yellow}Quantity calculated as 0. Buying Power: {self.portfolio.buying_power()}{reset}")
+
+            
+            # add price to tracking log
+            self.history.append(price)
+
+    @override
+    def on_execution(self, report: ExecutionReport) -> None:
+        """Called on an order update"""
+        log_report = report.__dict__.copy()
+        log_report['fill_timestamp_iso'] = report.fill_timestamp.isoformat()
+        logger.info(f"Notified of execution: {log_report}")
+        self.trading_records.append(log_report)
+
+    # this function records trades into a json file
+    # the trades can be extracted out of a dockerized
+    #+instance of this trading app with the following
+    #+command: $ docker cp <container_name_or_id>:trading_results.json trading_results.json
+    def _record_trade(self, side, qty, price):
+        """Helper to save a simple record locally."""
+        record = {
+            'timestamp': datetime.now().isoformat(),
+            'symbol': self.symbol,
+            'side': side,
+            'quantity': qty,
+            'price': price
+        }
+        with open("trading_results.json", "a") as f:
+            f.write(json.dumps(record) + "\n")
+    
+# =============================================
+#    -------  Momentum strategy -----------
+# =============================================
+# This is the strategy that's most developed in 
+#+the repo. You can edit this one for ease, or 
+#+anything else to your liking. Just make sure
+#+it runs.
 class MomentumStrategy(Strategy):
     """
     Momentum strategy with long/short support.
@@ -169,10 +250,14 @@ def main():
 
     feed = AlpacaLiveStockFeed()
     broker = AlpacaBroker()
+    # i'd recommend choosing which strategy to run here
     strategy = MomentumStrategy(symbol="SPY")
 
     # NOTE: theres almost surely a better way to store this cash info
-    # we could probably just get it from the API... :(
+    #+we could probably just get it from the API... I'm fairly certain
+    #+starting_cash is kind of irrelevant since the strategy already 
+    #+just gets the buying power from the live account.
+    #... but alas...
     starting_cash = 1000000
     engine = Engine(feed=feed, broker=broker, strategy=strategy, cash=starting_cash)
 
