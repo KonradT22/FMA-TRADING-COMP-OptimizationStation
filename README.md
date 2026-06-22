@@ -1,112 +1,178 @@
-# 2026 FMA Trading Competition
+# FMA Quantitative Trading Competition — 1st Place 🏆
 
-## Quick Links
-[Homepage](https://trade.mcfam.forum)
+A fully automated, event-driven equity trading bot built for the **2026 University of Minnesota Financial Management Association (FMA) Quantitative Trading Competition**. The strategy ran live in the cloud against real-time market data over a 10-day trading window and secured **1st Place** in front of a judging panel of industry professionals from **DRW** and **Cargill**.
 
-[Code base](https://github.com/umnfma/trade)
+---
 
-[Forum](https://mcfam.forum)
+## Performance
 
-## Getting Started
-1. [Join the forum](https://mcfam.forum/index.php?register/)
-2. [Join a team](https://mcfam.forum/index.php?threads/2026-trading-competition-sign-up-thread.33/)
-3. Clone the repo.
-4. Add your Alpaca API keys to the env.list file found in the project root.
-5. Edit the code in such a way that you will maximize returns while managing risk.
-6. Run the app.
+| Metric | Value |
+|---|---|
+| Live Trading Window | April 9 – April 19, 2026 |
+| Account Size | $1,000,000 (paper) |
+| Total Return | **+0.70%** (+$7,046.97) |
+| Max Drawdown | **0.00%** |
+| Per-Trade Return | **+4.70%** |
+| Win Rate | **100%** (1 for 1) |
+| Trades Executed | 1 (NFLX) |
+| Total Value Traded | $306,988 |
+| Turnover Ratio | 30.59% |
 
-### Unix (Linux/MacOS)
-```shell
-git clone git@github.com/umnfma/trade && cd trade
+### A Note on Benchmark & Alpha
+
+The portfolio underperformed the S&P 500 benchmark (+6.97%) during this specific window, but that was by design. The market experienced an aggressive tariff-relief rally over the period. Because our parameters strictly required high-quality, idiosyncratic earnings setups, the bot actively rejected sub-optimal trades and held cash for 8 of the 10 trading days. The result was a **0.00% maximum drawdown** and a clean **+4.7% capture on the single valid signal**.
+
+---
+
+## Architecture
+
 ```
-### Windows
-#### Command Prompt/CMD
-```cmd
-git clone git@github.com:umnfma/trade.git & cd trade
-```
-#### Powershell
-```powershell
-git clone git@github.com:umnfma/trade.git; cd trade
-```
-4. Implement your trading strategy in ```src/systrade/trading_app.py```.
-
-## Installation
-You can run this app in a python environment, but I would recommend running it
-in a Docker container.  Running it in a docker container will be helpful
-(maybe) for you and helpful when tracking different teams.  If you want to
-learn more about Docker, feel free to google it or checkout their website
-[here](https://docs.docker.com/get-started/get-docker/). In short, Docker
-will manage the environment variables for you, in a neatly packaged container
-on your server or wherever you choose to run it. You may notice I provided you with
-a Dockerfile so that should be the only thing you need to configure the container
-once you have Docker installed. (I use docker from the terminal but docker 
-does also have a nice GUI called Docker Desktop).
-
-### Run inside the terminal
-You can run the app in a python environment like a python virtual environment or an environment
-with a python kernel managed by anaconda. I will not be covering that here.
-
-Once inside the python environment, to install the app run the following
-command inside the root directory the project:
-```shell
-pip install -e .
+AlpacaLiveFeed (IEX 1-min polling)
+        │
+        ▼
+   Engine loop
+        │
+        ▼
+Strategy.on_data()  ──►  signal evaluation
+        │
+        ▼
+Broker.post_order()  ──►  Alpaca REST API
+        │
+        ▼
+Strategy.on_execution()  ──►  fill handling & stop tracking
 ```
 
-Export the environment variables to the terminal environment:
+| Component | Technology |
+|---|---|
+| Language | Python 3.13 |
+| Brokerage & Data | Alpaca REST API (IEX 1-min bars) |
+| Hosting | DigitalOcean Ubuntu Server |
+| Process Management | tmux + Linux cron (daily start/kill) |
+| Containerization | Docker |
+
+The system is built around four pluggable abstractions — **Feed**, **Broker**, **Portfolio**, and **Strategy** — making it straightforward to swap between live trading and backtesting without changing strategy code.
+
+---
+
+## Strategy: Post-Earnings Announcement Drift (PEAD)
+
+The algorithm targets structural inefficiencies around high-volatility corporate earnings reports using a two-sleeve approach.
+
+### Sleeve A — Pre-Earnings Momentum
+
+Captures momentum building into an earnings catalyst.
+
+- **Trigger:** Stock reports earnings in 1–3 trading days with a proprietary momentum score ≥ 0.90
+- **Conditions:** Price > SMA(20) and Price > Intraday VWAP at 10:15 AM EST
+- **Exit:** Hard close at 3:55 PM the day before earnings to eliminate binary overnight event risk
+
+### Sleeve B — Post-Earnings Drift
+
+Captures institutional accumulation following a strong earnings gap-up.
+
+- **Trigger:** Overnight gap of +2.0% to +8.0% following an earnings report
+- **Conditions:** Price holds above Intraday VWAP at 10:30 AM EST
+- **Exit:** Fixed 2-trading-day hold to capture drift as institutions scale into positions
+
+### Momentum Scoring
+
+Each stock in the universe is assigned a pre-computed event score (0–1) derived from five cross-sectional factors:
+
+| Factor | Weight |
+|---|---|
+| Fundamental momentum (EPS/revenue trend) | 35% |
+| Estimate revision direction | 20% |
+| Relative strength vs. SPY | 20% |
+| Accumulation days (volume-confirmed up days) | 15% |
+| IV attractiveness (options-implied expected move) | 10% |
+
+---
+
+## Risk Management
+
+Risk was enforced at both the position and portfolio level.
+
+**Position-level stops**
+- Dynamic stop floor: `Entry Price − (1.5 × ATR₁₄)`, bounded by the morning intraday low
+- Designed to absorb normal intraday noise while cutting real adverse moves
+
+**Portfolio-level limits**
+- 15% of portfolio equity per position
+- Maximum 4 concurrent open positions
+- 50% gross exposure cap — at least half the portfolio stays in cash at all times
+
+**Kill switches**
+- **Level 1 (−4% drawdown):** Tighten gross exposure cap to 25%, halt new entries
+- **Level 2 (−5% drawdown):** Liquidate all positions and halt trading for the session
+
+---
+
+## Infrastructure Challenges & V2.0 Roadmap
+
+Running a live polling engine on a fragmented data feed (IEX) introduced zero-volume minute stalls that could hang the execution loop. We engineered infrastructure-level bypasses using **tmux** and **cron** to automatically reboot the environment on a daily schedule, ensuring uninterrupted operation across the full 10-day window.
+
+**V2.0 improvements:**
+
+- Replace REST polling with an async WebSocket stream (e.g., Polygon.io) for tick-by-tick state management and elimination of stall risk
+- Expand the tradable universe from 24 large-caps to the Russell 2000 to capture stronger PEAD anomalies in lower-float equities
+- Replace static entry thresholds with IV-adjusted bounds to adapt to changing macroeconomic regimes
+
+---
+
+## Setup
+
+### Prerequisites
+
+- Python 3.13+
+- [Alpaca account](https://alpaca.markets/) with API keys (paper or live)
+- Docker (optional but recommended)
+
+### Environment Variables
+
+Create an `env.list` file in the project root (this file is gitignored):
+
+```
+ALPACA_API_KEY=your_key_here
+ALPACA_API_SECRET=your_secret_here
+ALPACA_PAPER=true
+```
+
+### Run with Docker
+
 ```bash
-export $(cat env.list)
+docker build -t systrade .
+docker run --env-file env.list -d systrade
+docker logs -f $(docker ps -lq)
 ```
-NOTE: theres a dummy env.list in the repo, just add your keys to it.
 
-Run the app:
-```shell
+### Run locally
+
+```bash
+pip install -e .
+export $(cat env.list)
 python src/systrade/trading_app.py
 ```
-you will begin to see the logs, but this is a very messy way to go about this.
-Follow the steps in the section below for a slight improvement.
 
-### Run With Docker (the following are all bash commands)
-Go to the folders root directory (the same directory with the dockerfile, ```env.list``` and ```src/``` directory),
-and run the following:
-```
-docker build -t systrade . && docker run --env-file env.list -d systrade
-```
-First it will build the image with the tag (-t) that you give it (systrade, in this case)
-and then it will run the container that it built as a daemon (-d) with the environment variable list that you 
-created with your Alpaca API keys (env.list).
+### Rebuild data files (optional)
 
-### Docker Tips
-To check if the previous command worked as intended, run:
-```docker ps```
-to list all currently running docker processes with their names.
-The name of the container will be structured as <adjective>_<mathematician/scientist>,
-like fancy_curie, relevant_turing etc. Now to see the logs of the running app, run:
-```
-docker logs -f <container_name> 
-```
-to follow the logs of the running container. I generally like to filter then since you get a lot of
-debug logs, so alternatively you could run:
-```
-docker logs -f <container_name> | grep -iE "info|error"
-```
-to greatly reduce your terminal clutter. Watching the logs for a while is always fun
-and will give you a good sense of just what the app is doing.
+The earnings calendar, event scores, and options data are pre-built and committed. To regenerate them:
 
-NOTE: You can view the container's logs so log at it exists. If the app runs into any problems,
-it will exit and the container will be "exited" as well. You will see this if you just list the
-docker containers:
+```bash
+python build_datasets.py   # earnings_calendar.csv, options_data.csv
+python build_features.py   # estimates.csv
 ```
-docker container ls
+
+### Run tests
+
+```bash
+pip install -e ".[test]"
+pytest tests/
 ```
-Exited containers will be listed as to have a status of ```exited``` and probably a time for when it exited.
-Remove exited containers with ``docker rm <container_name>```.
 
-## Expert Tips & Tricks
-If you are a self-proclaimed e1337 h4xor, you can also run this with your favorite process management software.
-I would recommend systemd..... but unfortunately for the competition, you are expected to make it run with docker.
+---
 
-## Deadlines
-- Registration Ends (March 14,2026 23:59 CST)
-- Final code submission (March 31, 2026 23:59 CST)
-- Trading begins (April 6 @ Market-Open)
-- Trading ends (April 17 @ Market-Close)
+## Team
+
+- [Konrad Trestka](https://github.com/KonradT22)
+- Chad Chowdhury
+- Huy Pham
