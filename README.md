@@ -1,6 +1,6 @@
 # FMA Quantitative Trading Competition — 1st Place 🏆
 
-A fully automated, event-driven equity trading bot built for the **2026 University of Minnesota Financial Management Association (FMA) Quantitative Trading Competition**. The strategy ran live in the cloud against real-time market data over a 10-day trading window and secured **1st Place** in front of a judging panel of industry professionals from **DRW** and **Cargill**.
+A fully automated, event-driven equity trading bot built for the **2026 University of Minnesota Financial Mathematics Association (FMA) Quantitative Trading Competition**. The strategy ran live in the cloud against real-time market data over a 10-day trading window and secured **1st Place** in front of a judging panel of industry professionals from **DRW** and **Cargill**.
 
 ---
 
